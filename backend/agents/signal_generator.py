@@ -209,6 +209,54 @@ def get_active_signals(limit=20, min_edge=15) -> list[dict]:
     )
 
 
+def run_full_analysis_pipeline(market_pk: int, user_bankroll: float = 10000) -> dict:
+    """
+    Run full 4-agent analysis pipeline in parallel.
+    This orchestrator speeds up the research process by running 
+    independent agents concurrently.
+    """
+    from markets.models import Market
+    from agents.quant_analyzer import analyze_market
+    from agents.ai_probability import estimate_probability
+    from django.utils import timezone
+    import concurrent.futures
+    
+    try:
+        market = Market.objects.get(pk=market_pk)
+        event_id = market.bayse_event_id
+        
+        logger.info(f"🚀 ORCHESTRATOR: Starting parallel research for {market.title}")
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            # Run Quant and AI agents in parallel
+            future_quant = executor.submit(analyze_market, market_pk)
+            future_ai = executor.submit(estimate_probability, event_id)
+            
+            # Wait for both to complete
+            quant_result = future_quant.result(timeout=45)
+            ai_result = future_ai.result(timeout=45)
+            
+        logger.info("✅ ORCHESTRATOR: Parallel research complete. Generating final signal...")
+        
+        # Step 4: Generate final signal (Commander Agent)
+        signal = generate_signal(
+            market_event_id=event_id,
+            user_bankroll=user_bankroll
+        )
+        
+        return {
+            'market_title': market.title,
+            'quant_metrics': quant_result,
+            'ai_analysis': ai_result,
+            'signal': signal,
+            'timestamp': timezone.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ ORCHESTRATOR: Pipeline failed: {e}")
+        raise
+
+
 def deactivate_expired_signals() -> int:
     """
     Deactivate signals whose expires_at has passed.

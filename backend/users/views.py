@@ -51,15 +51,27 @@ class UserViewSet(ViewSet):
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def login(self, request):
         """
-        Login user
+        Login user (supports username or email)
         POST /api/users/login/
         """
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            user = authenticate(
-                username=serializer.validated_data['username'],
-                password=serializer.validated_data['password']
-            )
+            username_or_email = serializer.validated_data['username']
+            password = serializer.validated_data['password']
+            
+            # Try to find user by email first if it looks like an email
+            user = None
+            if '@' in username_or_email:
+                try:
+                    user_obj = User.objects.get(email=username_or_email)
+                    user = authenticate(username=user_obj.username, password=password)
+                except User.DoesNotExist:
+                    pass
+            
+            # Fallback to standard username authentication
+            if not user:
+                user = authenticate(username=username_or_email, password=password)
+                
             if user:
                 token, created = Token.objects.get_or_create(user=user)
                 return Response({

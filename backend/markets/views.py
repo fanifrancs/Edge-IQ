@@ -45,8 +45,18 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
         return MarketDetailSerializer
     
     def get_queryset(self):
-            """Filter markets based on query params"""
+            """Filter markets based on query params. Triggers scan if empty."""
             queryset = Market.objects.all()
+            
+            # AUTOMATIC FETCH: If no markets in DB, trigger a scan to populate it
+            if not queryset.exists() and self.action == 'list':
+                logger.info("Local market database empty. Triggering automatic scan from Bayse.")
+                try:
+                    # Perform a basic scan to get started
+                    scan_markets(max_results=20)
+                    queryset = Market.objects.all()
+                except Exception as e:
+                    logger.error(f"Automatic market scan failed: {e}")
             
             status_filter = self.request.query_params.get('status', 'active')
             if status_filter:
@@ -68,12 +78,12 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
             if category:
                 queryset = queryset.filter(category=category)
             
-            # FIX 2: Filter by total_volume instead of volume_24h
+            # Filter by total_volume
             min_volume = self.request.query_params.get('min_volume')
             if min_volume:
                 queryset = queryset.filter(total_volume__gte=min_volume)
             
-            # FIX 3: Order by total_volume instead of volume_24h
+            # Order by score and volume
             queryset = queryset.order_by('-signal_potential_score', '-total_volume')
             
             return queryset
@@ -173,13 +183,47 @@ class MarketViewSet(viewsets.ReadOnlyModelViewSet):
             from utils.firebase_client import fs, Collection
             
             market = self.get_object()
+            firestore_doc_id = market.bayse_event_id
+            
+            # --- INTELLIGENCE CACHE: Check for recent signals ---
+            try:
+                from agents.signal_generator import get_active_signals
+                # Check if we have an active signal generated recently (last 15 mins)
+                # Note: get_active_signals returns the strongest, but we can filter by market_id
+                recent_signals = fs.query(
+                    Collection.SIGNALS,
+                    filters=[
+                        ("market_id", "==", firestore_doc_id),
+                        ("is_active", "==", True)
+                    ],
+                    order_by=("created_at", True),
+                    limit=1
+                )
+                
+                if recent_signals:
+                    sig = recent_signals[0]
+                    # If signal is less than 15 minutes old, return it instantly
+                    from dateutil import parser
+                    created_at = sig.get('created_at')
+                    if isinstance(created_at, str):
+                        created_at = parser.parse(created_at)
+                    
+                    if (timezone.now() - created_at).total_seconds() < 900:
+                        logger.info(f"🎯 CACHE HIT: Returning recent signal for {market.title}")
+                        return Response({
+                            'success': True,
+                            'cached': True,
+                            'market': MarketDetailSerializer(market).data,
+                            'signal': sig,
+                            'analyzed_at': created_at,
+                        })
+            except Exception as cache_err:
+                logger.warning(f"Intelligence cache check failed: {cache_err}")
+
             logger.info(f"Running full analysis for market: {market.title}")
             
             # Get user bankroll from request
             user_bankroll = float(request.data.get('user_bankroll', 10000))
-            
-            # Get the correct Firestore document ID (bayse_event_id, not SQLite PK)
-            firestore_doc_id = market.bayse_event_id
             
             # --- STEP 1: Sync market to Firestore ---
             market_data = MarketDetailSerializer(market).data

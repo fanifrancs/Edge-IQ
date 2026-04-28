@@ -98,69 +98,45 @@ class GeminiClient:
         actual_model_used = model_to_try  # Will be updated if failover happens
         
         try:
-            logger.info(f"Phase 1: Researching '{event_title[:50]}...' using {model_to_try}")
+            logger.info(f"🚀 FAST-PIPELINE: Researching '{event_title[:50]}...' using {model_to_try}")
             
-            # ==========================================
-            # STEP 1: THE RESEARCHER (Uses Google Search)
-            # ==========================================
-            research_prompt = self._build_research_prompt(event_title, event_description, market_context)
+            # COMBINED STEP: Research + Format in one pass for maximum speed
+            research_prompt = f"""You are a high-speed quantitative researcher. 
+            Analyze this event: "{event_title}"
             
-            research_config = GenerateContentConfig(
-                temperature=0.3,
-                tools=[GoogleSearch()],
-            )
+            QUICK TASK:
+            1. Identify the 3 most critical keywords for this event.
+            2. Search the web for the latest news using those keywords.
+            3. Synthesize the results into a probability estimate.
             
-            research_response, research_model = self._generate_with_retry(
-                model=model_to_try,
-                contents=research_prompt,
-                config=research_config,
-            )
-            
-            if research_response is None:
-                self._mark_model_exhausted(model_to_try)
-                return self.estimate_probability(event_title, event_description, market_context)
-            
-            actual_model_used = research_model  # Update with actual model that worked
-            
-            logger.info("Phase 2: Formatting output into strict JSON schema")
-            
-            # ==========================================
-            # STEP 2: THE FORMATTER (Uses Strict Schema)
-            # ==========================================
-            format_prompt = f"""
-            Extract the data from the following research report into the required JSON schema.
-            Make sure the reasoning is a single continuous paragraph without line breaks.
-            
-            RESEARCH REPORT:
-            {research_response.text}
+            CONTEXT: {event_description}
             """
-            
-            format_config = GenerateContentConfig(
-                temperature=0.0,
+            if market_context:
+                research_prompt += f"\nPRICE: ₦{market_context.get('current_price')} | MKT PROB: {market_context.get('implied_probability')}%"
+
+            # One-pass config: Tools + Schema
+            combined_config = GenerateContentConfig(
+                temperature=0.2,
+                tools=[GoogleSearch()],
                 response_mime_type="application/json",
                 response_schema=AIAnalysisSchema,
             )
             
-            final_response, format_model = self._generate_with_retry(
-                model=actual_model_used,
-                contents=format_prompt,
-                config=format_config,
+            response, actual_model = self._generate_with_retry(
+                model=model_to_try,
+                contents=research_prompt,
+                config=combined_config,
             )
             
-            if final_response is None:
-                self._mark_model_exhausted(actual_model_used)
+            if response is None:
+                self._mark_model_exhausted(model_to_try)
                 return self.estimate_probability(event_title, event_description, market_context)
             
-            actual_model_used = format_model  # Update again (should be same as research_model)
+            # Parse the guaranteed JSON
+            result = self._parse_response(response.text)
+            result['model_used'] = actual_model
             
-            # Parse the guaranteed perfect JSON
-            result = self._parse_response(final_response.text)
-            
-            # 🔥 THIS IS THE KEY - Return the actual model that was used
-            result['model_used'] = actual_model_used
-            
-            logger.info(f"✅ Pipeline Complete: {result['probability']}% (Confidence: {result['confidence']}%) using {actual_model_used}")
-            
+            logger.info(f"✅ Fast-Pipeline Complete using {actual_model}")
             return result
             
         except Exception as e:

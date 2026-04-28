@@ -8,7 +8,9 @@ const mapMarketForUI = (market) => {
   const probability = Number(market.implied_probability ?? 0);
   const volume = Number(market.volume_24h ?? market.total_volume ?? market.volume ?? 0);
   const liquidity = Number(market.liquidity ?? 0);
-  const timeToEnd = Number(market.time_remaining_hours ?? market.timeToEnd ?? 0);
+  const timeToEnd = market.closes_at 
+      ? new Date(market.closes_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+      : "N/A";
 
   return {
     ...market,
@@ -143,7 +145,7 @@ const MarketPulse = () => {
                         </p>
                         <div className="flex items-baseline gap-2">
                           <p className="font-headline text-2xl font-bold text-[#f0a500]">
-                            {Math.round(market.price * 100)}¢
+                            ₦{(market.price).toFixed(2)}
                           </p>
                           <span
                             className={`font-mono text-xs ${String(market.change).startsWith("+") ? "text-[#7cd9ac]" : "text-[#ffb4ab]"}`}
@@ -162,10 +164,10 @@ const MarketPulse = () => {
                         </p>
                         <p className="font-headline text-2xl font-bold text-[#b3c5ff]">
                           {filter === "Liquidity"
-                            ? `$${formatNum(market.liquidity)}`
+                            ? `₦${formatNum(market.liquidity)}`
                             : filter === "Time-to-End"
                               ? market.timeToEnd
-                              : formatNum(market.volume)}
+                              : `₦${formatNum(market.volume)}`}
                         </p>
                       </div>
                     </div>

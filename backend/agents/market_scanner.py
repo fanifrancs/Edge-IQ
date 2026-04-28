@@ -101,6 +101,12 @@ def scan_markets(status='open', min_volume=0, min_liquidity=0, max_results=20):
                 resolved_at = parse_timestamp(event.get('resolutionDate'))
                 opens_at = parse_timestamp(event.get('openingDate'))
 
+                # Calculate time remaining in hours
+                time_remaining = 0
+                if closes_at:
+                    delta = closes_at - timezone.now()
+                    time_remaining = max(0, int(delta.total_seconds() / 3600))
+
                 implied_prob = bayse_client.calculate_implied_probability(current_price)
                 signal_score = calculate_signal_potential(total_volume, liquidity, closes_at)
 
@@ -113,13 +119,14 @@ def scan_markets(status='open', min_volume=0, min_liquidity=0, max_results=20):
                     "category": category,
                     "current_price": float(current_price),
                     "implied_probability": implied_prob,
-                    "volume_24h": 0,
+                    "volume_24h": float(total_volume), # Fallback to total volume if 24h is missing
                     "total_volume": float(total_volume),
                     "liquidity": float(liquidity),
                     "status": status or event.get('status', 'open'),
                     "opens_at": opens_at.isoformat() if opens_at else None,
                     "closes_at": closes_at.isoformat() if closes_at else None,
                     "resolved_at": resolved_at.isoformat() if resolved_at else None,
+                    "time_remaining": time_remaining,
                     "signal_potential_score": signal_score,
                     "last_scanned_at": timezone.now().isoformat(),
                     "created_at": timezone.now().isoformat(),
@@ -136,12 +143,40 @@ def scan_markets(status='open', min_volume=0, min_liquidity=0, max_results=20):
 
         # Batch write all markets at once
         if markets_to_sync:
+            # 1. Sync to Firestore
             success = bulk_sync_markets_to_firestore(markets_to_sync)
             if success:
                 markets_saved = markets_to_sync
-                logger.info(f"Batch sync complete: {len(markets_saved)} markets saved")
+                logger.info(f"Firestore batch sync complete: {len(markets_saved)} markets saved")
             else:
-                logger.error("Batch sync failed")
+                logger.error("Firestore batch sync failed")
+            
+            # 2. Sync to local SQLite (Django ORM)
+            try:
+                from markets.models import Market
+                for m_doc in markets_to_sync:
+                    Market.objects.update_or_create(
+                        bayse_event_id=m_doc['bayse_event_id'],
+                        defaults={
+                            'title': m_doc['title'],
+                            'bayse_market_id': m_doc['bayse_market_id'],
+                            'description': m_doc['description'],
+                            'category': m_doc['category'],
+                            'current_price': m_doc['current_price'],
+                            'implied_probability': m_doc['implied_probability'],
+                            'total_volume': m_doc['total_volume'],
+                            'liquidity': m_doc['liquidity'],
+                            'status': m_doc['status'],
+                            'opens_at': m_doc['opens_at'],
+                            'closes_at': m_doc['closes_at'],
+                            'resolved_at': m_doc['resolved_at'],
+                            'signal_potential_score': m_doc['signal_potential_score'],
+                            'last_scanned_at': timezone.now(),
+                        }
+                    )
+                logger.info(f"SQLite sync complete: {len(markets_to_sync)} markets updated/created")
+            except Exception as e:
+                logger.error(f"SQLite sync failed: {e}")
 
         logger.info(f"Scan complete: {len(markets_saved)} saved, {skipped} skipped")
 
@@ -152,6 +187,21 @@ def scan_markets(status='open', min_volume=0, min_liquidity=0, max_results=20):
             order_by=("signal_potential_score", True),  # descending
             limit=max_results,
         )
+
+        # --- Autonomous Pre-computation: Trigger analysis for top candidates ---
+        try:
+            from .tasks import async_analyze_market
+            # Trigger analysis for the top 5 highest potential markets immediately
+            # This ensures that when the user clicks a market, the data is already warm.
+            for m in top_markets[:5]:
+                # We use the integer ID for the task if available, else UUID
+                market_id_to_task = m.get('id') or m.get('bayse_event_id')
+                if market_id_to_task:
+                    async_analyze_market.delay(market_id_to_task)
+            logger.info(f"🚀 Autonomous Pre-computation triggered for top {min(len(top_markets), 5)} candidates")
+        except Exception as e:
+            logger.warning(f"Could not trigger autonomous pre-computation: {e}")
+
         return top_markets
 
     except BayseAPIError as e:

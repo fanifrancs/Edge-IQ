@@ -256,7 +256,7 @@ class BayseClient:
             logger.warning(f"Ticker not available for market {market_id}: {str(e)}")
             return {}
     
-    def get_order_book(self, outcome_id, depth=10, currency='USD'):
+    def get_order_book(self, outcome_id, depth=10, currency='NGN'):
         """
         Get order book for a specific outcome
         Docs: GET /v1/pm/books?outcomeId[]={outcomeId}&depth=10&currency=USD

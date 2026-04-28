@@ -4,7 +4,7 @@ import { marketsAPI, portfolioAPI } from "../services/api";
 
 const extractMarketsList = (response) => response?.results || response?.markets || [];
 const MAX_ANALYSIS_POLL_ATTEMPTS = 45;
-const ANALYSIS_POLL_INTERVAL_MS = 2000;
+const ANALYSIS_POLL_INTERVAL_MS = 1000;
 
 const IntelligenceTerminal = () => {
   const { id } = useParams();
@@ -112,7 +112,8 @@ const IntelligenceTerminal = () => {
             userBankroll = profileData.bankroll || 10000;
             setLogs((prev) => [
               ...prev,
-              { agent: "Math Bot", message: `Bankroll loaded: ₦${Number(userBankroll).toLocaleString()}`, status: "done", time: new Date().toLocaleTimeString() },
+              { agent: "Quant Agent", message: `Scanning market microstructure...`, status: "pending", time: new Date().toLocaleTimeString() },
+              { agent: "Quant Agent", message: `Bankroll loaded: ₦${Number(userBankroll).toLocaleString()}`, status: "done", time: new Date().toLocaleTimeString() },
             ]);
           }
         } catch (e) {
@@ -191,8 +192,8 @@ const IntelligenceTerminal = () => {
           setLogs((prev) => [
             ...prev,
             {
-              agent: "Researcher",
-              message: "Signal generation complete.",
+              agent: "Commander",
+              message: "Final signal generated. Position size optimized.",
               status: "done",
               time: new Date().toLocaleTimeString(),
             },
@@ -301,11 +302,11 @@ const IntelligenceTerminal = () => {
                   className={`font-mono text-xs font-bold uppercase ${
                     log.agent === "Scanner"
                       ? "text-[#b3c5ff]"
-                      : log.agent === "Math Bot"
+                      : log.agent === "Quant Agent"
                         ? "text-[#7cd9ac]"
                         : log.agent === "Researcher"
                           ? "text-[#f0a500]"
-                          : "text-[#ffb4ab]"
+                          : "text-[#1a4db8]"
                   }`}
                 >
                   {log.agent}
@@ -440,27 +441,33 @@ const IntelligenceTerminal = () => {
           </div>
 
           <div className="flex flex-col gap-8">
-            {/* The SMC Heatmap */}
+            {/* The AI Context & News Card */}
             <div className="rounded-2xl bg-[#090e1b] border border-[#434653]/20 p-6 flex-1">
               <h3 className="font-headline text-lg mb-4 flex justify-between">
-                Where the Money Is
-                <span className="material-symbols-outlined text-[#8d909e]">
-                  view_timeline
+                Market Context & News
+                <span className="material-symbols-outlined text-[#7cd9ac]">
+                  news
                 </span>
               </h3>
-              <div className="flex h-32 w-full border-l border-b border-[#434653] relative opacity-80">
-                {/* Horizontal Volume Bars */}
-                <div className="absolute top-[10%] left-0 h-4 bg-[#7cd9ac]/80 w-[45%]" />
-                <div className="absolute top-[30%] left-0 h-4 bg-[#b3c5ff]/40 w-[20%]" />
-                <div className="absolute top-[50%] left-0 h-4 bg-[#f0a500]/90 w-[80%] shadow-[0_0_10px_#f0a500]" />
-                <div className="absolute top-[70%] left-0 h-4 bg-[#b3c5ff]/60 w-[35%]" />
-                <div className="absolute top-[90%] left-0 h-4 bg-[#ffb4ab]/80 w-[60%]" />
-                {!researching && (
-                  <div className="absolute top-[50%] left-[82%] text-xs font-mono text-[#f0a500] whitespace-nowrap -translate-y-1/2">
-                    BIG INVESTORS BUYING HERE
-                  </div>
-                )}
-              </div>
+              {researching ? (
+                <div className="flex flex-col gap-3">
+                  <div className="h-4 w-full bg-[#1a1f2d] animate-pulse rounded"></div>
+                  <div className="h-4 w-3/4 bg-[#1a1f2d] animate-pulse rounded"></div>
+                  <div className="h-4 w-5/6 bg-[#1a1f2d] animate-pulse rounded"></div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-[#c3c6d5] leading-relaxed italic">
+                    "{analysis?.ai_analysis?.reasoning || "No news context available for this market yet."}"
+                  </p>
+                  {analysis?.ai_analysis?.sources && (
+                    <div className="pt-2 border-t border-[#434653]/20">
+                      <p className="font-mono text-[10px] uppercase text-[#8d909e] mb-1">Sources Consulted</p>
+                      <p className="text-xs text-[#b3c5ff] truncate">{analysis.ai_analysis.sources}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* The Kelly Action Card */}
