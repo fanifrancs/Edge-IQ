@@ -6,34 +6,42 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const isAuthenticated = !!user;
+
   useEffect(() => {
     // Check local storage for persistent login on mount
-    const token = localStorage.getItem("edgeiq_token");
-    const storedUser = localStorage.getItem("edgeiq_user");
-    
-    if (token && storedUser) {
-      setIsAuthenticated(true);
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const initAuth = () => {
+      try {
+        const token = localStorage.getItem("edgeiq_token");
+        const storedUser = localStorage.getItem("edgeiq_user");
+        
+        if (token && storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+      } catch (err) {
+        console.error("Failed to restore auth session:", err);
+        localStorage.removeItem("edgeiq_token");
+        localStorage.removeItem("edgeiq_user");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initAuth();
   }, []);
 
   const login = async (email, password) => {
     try {
       setError(null);
-      setLoading(true);
+      // We don't set loading to true here to avoid unmounting the app
       
-      // Extract username from email or use email as username
-      const username = email.split("@")[0];
-      const response = await authAPI.login(username, password);
+      const response = await authAPI.login(email, password);
       
       if (response.success) {
-        setIsAuthenticated(true);
         setUser(response.user);
         return response;
       } else {
@@ -42,22 +50,16 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       setError(err.message || "An error occurred");
-      console.error("Login error:", err);
       return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
     }
   };
 
   const register = async (email, password, username) => {
     try {
       setError(null);
-      setLoading(true);
-      
       const response = await authAPI.register(email, password, username);
       
       if (response.success) {
-        setIsAuthenticated(true);
         setUser(response.user);
         return response;
       } else {
@@ -66,43 +68,35 @@ export const AuthProvider = ({ children }) => {
       }
     } catch (err) {
       setError(err.message || "An error occurred");
-      console.error("Registration error:", err);
       return { success: false, error: err.message };
-    } finally {
-      setLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      setLoading(true);
       await authAPI.logout();
-      setIsAuthenticated(false);
-      setUser(null);
-      setError(null);
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
-      setLoading(false);
+      localStorage.removeItem("edgeiq_token");
+      localStorage.removeItem("edgeiq_user");
+      setUser(null);
+      setError(null);
     }
   };
 
-  if (loading && localStorage.getItem("edgeiq_token")) {
-    return null; // Or a loading spinner
-  }
+  const value = {
+    isAuthenticated,
+    user,
+    login,
+    register,
+    logout,
+    loading,
+    error
+  };
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        isAuthenticated, 
-        user,
-        login, 
-        register,
-        logout,
-        loading,
-        error 
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

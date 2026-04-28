@@ -1,11 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 const AuthPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, register } = useAuth();
+  const { login, register, isAuthenticated, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      navigate("/markets");
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
   const [isLogin, setIsLogin] = useState(
     location.state?.isSignUp === true ? false : true,
   );
@@ -38,7 +45,11 @@ const AuthPage = () => {
           navigate("/markets");
         }, 500);
       } else {
-        setError(response.error || (isLogin ? "Login failed" : "Registration failed"));
+        const backendError = response.error || (response.errors ? JSON.stringify(response.errors) : null);
+        const errorMessage = backendError || (isLogin 
+          ? "User details not found in the database." 
+          : "Registration failed. Please try a different username or email.");
+        setError(errorMessage);
       }
     } catch (err) {
       setError(err.message || "An error occurred");
@@ -144,18 +155,7 @@ const AuthPage = () => {
           </button>
         </form>
 
-        <div className="my-8 flex items-center">
-          <div className="flex-1 border-t border-[#434653]/30"></div>
-          <span className="mx-4 font-mono text-xs text-[#8d909e]">
-            OR
-          </span>
-          <div className="flex-1 border-t border-[#434653]/30"></div>
-        </div>
 
-        <button className="flex w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-[#434653]/50 bg-[#1a1f2d] py-3 text-[#dee2f5] transition-colors hover:bg-[#252a38]">
-          <span className="material-symbols-outlined">api</span>
-          Continue with Bayse
-        </button>
 
         <p className="mt-8 text-center text-sm text-[#8d909e]">
           {isLogin ? "Don't have an account? " : "Already have an account? "}
