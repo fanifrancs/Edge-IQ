@@ -15,3 +15,5 @@ ENV PORT=8080
 
 # 6. Start Django with Gunicorn (production server)
 CMD exec gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+
+# 
